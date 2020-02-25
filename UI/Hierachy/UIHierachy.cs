@@ -1,4 +1,5 @@
 ﻿using Assets.Hierachy;
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
@@ -7,91 +8,212 @@ using UnityEngine.EventSystems;
 using UnityEngine.UI;
 
 [ExecuteAlways]
-public class UIHierachy : Selectable
+public class UIHierachy : MonoBehaviour
 {
-    class ClickEvent : UnityEvent<UIHierachy>
+    /*A UI hierachy contain:
+     * - feature buttons around them
+     * - content
+     * 
+     * When a node is changing content we update the lower node
+     * 
+     */
+    protected class ClickEvent : UnityEvent<UIHierachy>
+    {
+
+    }
+
+    [Serializable]
+    public class StructureChangedEvent : UnityEvent<UIHierachy>
     {
 
     }
     /// <summary>
+    /// Trigger everytime structure in view has changed
+    /// </summary>
+    //public event UnityAction<UIHierachy> StructureChanged;
+    /// <summary>
     /// distance by height from upper node to lower node
     /// </summary>
-    public static int Height = 100;
+    public static int Height = -100;
     /// <summary>
     /// distance by width from parent node to children node
     /// </summary>
     public static int Width = 50;
+    /// <summary>
+    /// Height of this in world
+    /// </summary>
+    public float ActualHeight { get; private set; }
+    /// <summary>
+    /// Height of this self when stay alone
+    /// </summary>
+    public float ChildrenHeight;
     public string Content => Data.Value;
-    public UnityEvent<UIHierachy> Click;
+    public StructureChangedEvent StructureChanged;
     public HierachyData Data
     {
         get => data;
         set => data = value;
     }
-    [SerializeField]
+
+    /// <summary>
+    /// Note that we don't expected that content of a node will be changed regurlaly
+    /// </summary>
+    public Text text;
     private HierachyData data;
+    private bool isExpand;
     UIHierachy()
     {
+        isExpand = true;
     }
 
     private void Awake()
     {
-        targetGraphic = gameObject.GetComponent<Graphic>();
         
-        //if (Data == null)
-        //{
-        //    Data = new HierachyData("a");
-        //    Data.View = this;
-        //    if (gameObject.transform.parent != null)
-        //    {
-        //        UIHierachy p = gameObject.transform.parent.GetComponent<UIHierachy>();
-        //        p?.Data.Add(Data);
-        //    }
-        //}
-
-        //gameObject.transform.SetParent(Data.Parent.View.transform);
     }
 
     private void Start()
     {
-        Click = new ClickEvent();
-        Click.AddListener((s) =>
-        {
-            HierachyData node1 = new HierachyData("node");
-            Data.Add(node1);
-            UIHierachy view1 = UIHierachy.Create(node1);
-        });
         if (Data.Parent != null)
         {
             gameObject.transform.SetParent(Data.Parent.View.transform);
         }
-        Debug.Log("Hi mom");
-        Align();
+        text.text = data.Value;
+        OnStructureChanged(this);
     }
 
-    public override void OnSelect(BaseEventData eventData)
-    {
-        base.OnSelect(eventData);
-        Click.Invoke(this);
-    }
-    public override void Select()
-    {
-        base.Select();
-    }
     private void Align()
     {
-        if (Data.Parent == null) return;
+        if (data.Parent == null || transform.parent == null)
+        {
+            return;
+        }
+
+        Vector3 location = transform.position;
+        int order = data.Order;
+
+        if (order == 1)
+        {
+            location.y = data.Parent.View.transform.position.y;
+        }
+
+        if (order > 1)
+        {
+            location.y = data.Parent[order - 2].View.transform.position.y + data.Parent[order - 2].View.ChildrenHeight;
+        }
+
+        location.y += Height;
+
         Vector3 parentLocation = gameObject.transform.parent.position;
-        float px = (Mathf.Abs(parentLocation.x) + Width);
-        float py = (Mathf.Abs(parentLocation.y) - Height * Data.Order);
-        gameObject.transform.position = new Vector3(px, py, 0);
+        float px = parentLocation.x + Width;
+        location.x = px;
+        gameObject.transform.position = location;
+    }
+
+    public void Expand()
+    {
+        isExpand = !isExpand;
+
+        foreach (HierachyData item in Data)
+        {
+            item.View.gameObject.SetActive(isExpand);
+        }
+        StructureChanged?.Invoke(this);
+    }
+
+    public void OnStructureChanged(UIHierachy view)
+    {
+        view.CalculateLocalHeight();
+        view.Align();
+
+        foreach (HierachyData item in view.data)
+        {
+            item.View.DescendantChanged();
+        }
+
+        if (view.data.Parent != null)
+        {
+            int order = data.Order;
+
+            for (int loop = order; loop < view.data.Parent.Count; loop++)
+            {
+                view.data.Parent[loop].View.BrothersChanged();
+            }
+        }
+        
+    }
+
+    private void DescendantChanged()
+    {
+        CalculateLocalHeight();
+        Align();
+
+        foreach (HierachyData item in data)
+        {
+            item.View.DescendantChanged();
+        }
+    }
+
+    private void BrothersChanged()
+    {
+        CalculateLocalHeight();
+        Align();
+
+        foreach (HierachyData item in data)
+        {
+            item.View.DescendantChanged();
+        }
+    }
+
+    private void CalculateLocalHeight()
+    {
+        if (isExpand)
+        {
+            ChildrenHeight = Height * data.Count;
+            foreach (HierachyData item in data)
+            {
+                item.View.CalculateLocalHeight();
+                ChildrenHeight += item.View.ChildrenHeight;
+            }
+        }
+        else
+        {
+            ChildrenHeight = 0;
+        }
+
+    }
+
+    /// <summary>
+    /// Calculate actual height for itself
+    /// </summary>
+    private void CalculateActualHeight()
+    {
+        if (data.Parent == null)
+        {
+            ActualHeight = transform.position.y;
+            return;
+        }
+
+        int order = data.Order;
+
+        if (order == 1)
+        {
+            ActualHeight = data.Parent.View.transform.position.y;
+        }
+
+        if (order > 1)
+        {
+            ActualHeight = data.Parent[order - 2].View.transform.position.y + data.Parent[order - 2].View.ChildrenHeight;
+            //ActualHeight = data.Parent[order - 2].View.ActualHeight + data.Parent[order - 2].View.ChildrenHeight;
+        }
+
+        ActualHeight += Height;
     }
 
     public static UIHierachy Create(HierachyData data)
     {
         GameObject go = Resources.Load<GameObject>("HierachyBase");
         GameObject clone = Instantiate(go);
-        UIHierachy view = clone.AddComponent<UIHierachy>();
+        UIHierachy view = clone.GetComponent<UIHierachy>();
         view.Data = data;
         data.View = view;
 

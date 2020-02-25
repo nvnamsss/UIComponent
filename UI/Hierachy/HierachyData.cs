@@ -2,10 +2,11 @@
 using System.Collections.Generic;
 using UnityEngine;
 using System;
+using System.Collections;
+
 namespace Assets.Hierachy
 {
-    [Serializable]
-    public class HierachyData
+    public class HierachyData : IEnumerable
     {
         public string Value;
         public int Order
@@ -42,13 +43,7 @@ namespace Assets.Hierachy
         }
 
 
-        public HierachyData this[int index]
-        {
-            get
-            {
-                return collection[index];
-            }
-        }
+        
 
         public void Add(HierachyData item)
         {
@@ -80,5 +75,16 @@ namespace Assets.Hierachy
             collection.RemoveAt(index);
         }
 
+        public HierachyData this[int index]
+        {
+            get
+            {
+                return collection[index];
+            }
+        }
+        public IEnumerator GetEnumerator()
+        {
+            return collection.GetEnumerator();
+        }
     }
 }
